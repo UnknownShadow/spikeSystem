@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- mybatis 映射文件，对 spike 表执行操作 -->
+
+<mapper namespace="org.spike.dao.SpikeDAO">
+    <update id="reduceNumber">
+        update spike
+        set number = number - #{reduceNumber}
+        where spike_id = #{spikeId}
+        and start_time <![CDATA[<=]]> #{spikeTime}
+        and end_time >= #{spikeTime}
+        and number > 0
+    </update>
+
+    <update id="reduceNumberToZero">
+        update spike
+        set number = 0
+        where spike_id = #{spikeId}
+        and start_time <![CDATA[<=]]> #{spikeTime}
+        and end_time >= #{spikeTime}
+    </update>
+
+    <select id="queryById" resultType="Spike" parameterType="long">
+        select spike_id, name, number, create_time, start_time, end_time
+        from spike
+        where spike_id = #{spikeId}
+    </select>
+
+    <select id="queryAll" resultType="Spike">
+        select spike_id, name, number, create_time, start_time, end_time
+        from spike
+        order by create_time desc
+        limit #{offset}, #{limit}
+    </select>
+
+    <!--使用mybatis调用存储过程-->
+    <select id="spikeByProcedure" statementType="CALLABLE">
+        call execute_spike(
+          #{spikeId, jdbcType=BIGINT, mode=IN},
+          #{phone, jdbcType=BIGINT, mode=IN},
+          #{spikeTime, jdbcType=TIMESTAMP, mode=IN},
+          #{result, jdbcType=INTEGER, mode=OUT}
+        )
+    </select>
+</mapper>

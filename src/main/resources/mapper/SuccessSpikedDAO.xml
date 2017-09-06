@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- mybatis 映射文件，对 success_spiked 表执行操作 -->
+
+<mapper namespace="org.spike.dao.SuccessSpikedDAO">
+    <insert id="insertSpikedRecord">
+        insert ignore into success_spiked(spike_id, phone_number)
+        values(#{spikeId}, #{phoneNumber})
+    </insert>
+
+    <insert id="insertSpikedRecordFromRedis">
+        insert ignore into success_spiked(spike_id, phone_number, create_time)
+        values(#{spikeId}, #{phoneNumber}, #{createTime})
+    </insert>
+
+    <select id="querySpikeRecord" resultType="SuccessSpiked" parameterType="long">
+        select
+        ss.spike_id,
+        ss.phone_number,
+        ss.state,
+        ss.create_time,
+        s.spike_id "spike.spike_id",
+        s.name "spike.name",
+        s.number "spike.number",
+        s.create_time "spike.create_time",
+        s.start_time "spike.start_time",
+        s.end_time "spike.end_time"
+        from success_spiked ss, spike s
+        where ss.spike_id = s.spike_id
+        and ss.spike_id = #{spikeId}
+        and ss.phone_number = #{phoneNumber}
+    </select>
+</mapper>
