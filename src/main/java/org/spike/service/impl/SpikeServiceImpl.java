@@ -200,7 +200,7 @@ public class SpikeServiceImpl implements SpikeService {
             // 获得当前时间
             long time = System.currentTimeMillis();
             // 超时 2秒，循环更新列表
-            while (System.currentTimeMillis() - time < 200){
+            while (System.currentTimeMillis() - time < 1000){
                 // 新建 successSpike 用于更新 redis
                 // 获得返回值
                 SpikeStateEnum spikeStateEnum = redisDAO.updateSpike(spikeId, phoneNumber);
@@ -216,13 +216,17 @@ public class SpikeServiceImpl implements SpikeService {
                                 Long id = Long.parseLong(data[0]);
                                 Long phone = Long.parseLong(data[1]);
                                 Date date = new Date(Long.parseLong(data[2]));
-
                                 // 往数据库插入
                                 successSpikedDAO.insertSpikedRecordFromRedis(id, phone, date);
-                                // 更新库存为 0
-                                spikeDAO.reduceNumber(1, id, date);
                             }
+                            // 秒杀结束, 更新库存为 0
+                            spikeDAO.reduceNumberToZero(spikeId, new Date(System.currentTimeMillis()));
                         }
+                    }
+
+                    if (spikeStateEnum.getState() == 1){
+                        // 成功秒杀, 更新库存
+                        spikeDAO.reduceNumber(1, spikeId, new Date(System.currentTimeMillis()));
                     }
                     return new SpikeExecution(spikeId, spikeStateEnum);
                 }
