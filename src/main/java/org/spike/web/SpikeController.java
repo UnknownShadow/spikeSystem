@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import javax.jws.WebParam;
 import java.util.Date;
 import java.util.List;
+import java.util.Random;
 
 /**
  *  Controller 类
@@ -109,7 +110,10 @@ public class SpikeController {
     @ResponseBody
     public SpikeResult<SpikeExecution> execute(@PathVariable("spikeId") Long spikeId,
                                                @PathVariable("md5") String md5,
-                                               @CookieValue(value = "spikePhone", required = false) Long phoneNumber){
+                                               @CookieValue(value = "spikePhone", required = false) Long phoneNumber
+
+    ){
+
         // 验证cookie避免空值
         if (phoneNumber == null)
             return new SpikeResult<SpikeExecution>(false, "未注册");

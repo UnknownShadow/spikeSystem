@@ -12,6 +12,7 @@ import org.spike.enums.SpikeStateEnum;
 import org.springframework.web.servlet.view.InternalResourceViewResolver;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
 import redis.clients.jedis.Transaction;
 
 import java.util.ArrayList;
@@ -30,25 +31,23 @@ public class RedisDAO {
 
     private final static String SET = "checkRecord";
 
+    private final static JedisPoolConfig config = new JedisPoolConfig();
+
+    static {
+        // 500 个实例
+        config.setMaxTotal(500);
+        // 最多闲置实例
+        config.setMaxIdle(5);
+        // 最长等待时间
+        config.setMaxWaitMillis(1000 * 5);
+    }
+
     public RedisDAO(String ip, int port){
         jedisPool = new JedisPool(ip, port);
     }
 
     private RuntimeSchema<Spike> schemaSpike = RuntimeSchema.createFrom(Spike.class);
     private RuntimeSchema<SuccessSpiked> schemaSucess = RuntimeSchema.createFrom(SuccessSpiked.class);
-
-
-    public Jedis getJedis(){
-
-        try{
-
-            return jedisPool.getResource();
-        } catch (Exception e){
-            logger.error(e.getMessage(), e);
-        }
-
-        return null;
-    }
 
 
     // 获取秒杀商品
@@ -91,11 +90,13 @@ public class RedisDAO {
             Jedis jedis = jedisPool.getResource();
             try {
                 String key = "spike:" + spike.getSpikeId();
+                String countKey = "count:" + spike.getSpikeId();
                 byte[] bytes = ProtostuffIOUtil.toByteArray(spike, schemaSpike,
                         LinkedBuffer.allocate(LinkedBuffer.DEFAULT_BUFFER_SIZE));
                 // 超时缓存（key, timeout, bytes）
                 int timeout = 60 * 60; // 缓存一小时
                 String result = jedis.setex(key.getBytes(), timeout, bytes);
+                jedis.setnx(countKey, spike.getNumber() + "");
                 return result;
             } finally {
                 jedis.close();
@@ -114,45 +115,37 @@ public class RedisDAO {
      * @param phoneNumber
      * @return
      */
-    public boolean isRepeatedSpike(long spikeId, long phoneNumber){
+    public boolean isRepeatedSpike(Jedis jedis, long spikeId, long phoneNumber){
 
-        Jedis jedis = getJedis();
-        if (jedis != null){
-            String key = spikeId + "/" + phoneNumber;
-            // 检查集合中是否存在记录
-            boolean exist = jedis.sismember(SET, key);
+        String key = spikeId + "/" + phoneNumber;
+        // 检查集合中是否存在记录
+        boolean exist = jedis.sismember(SET, key);
 
-            jedis.close();
-            return exist;
-        }
-
-        return true;
+        return exist;
     }
 
     /**
-     * 更新逻辑
-     * @param successSpiked
+     * 更新库存逻辑
+     * @param spikeId
+     * @param phoneNumber
+     * @return
      */
-    public SpikeStateEnum updateSpike(SuccessSpiked successSpiked){
+    public SpikeStateEnum updateSpike(long spikeId, long phoneNumber){
 
-        long start = System.currentTimeMillis();
         try {
             // 设置监控 key
-            String watchKey = "watch:" + successSpiked.getSpikeId();
+            String watchKey = "watch:" + spikeId;
             Jedis jedis = jedisPool.getResource();
-            // 获取商品总库存
-            int total = getSpike(successSpiked.getSpikeId()).getNumber();
             // 设置库存 key
-            String countKey = "count:" + successSpiked.getSpikeId();
+            String countKey = "count:" + spikeId;
             // 如果不存在 key，则设置一个
             jedis.setnx(watchKey, 0 + "");
-            jedis.setnx(countKey, total + "");
             // 检查库存的余量
             int count = Integer.parseInt(jedis.get(countKey));
             // 如果还有库存
             if (count > 0) {
                 // 检查是否重复秒杀
-                boolean exist = isRepeatedSpike(successSpiked.getSpikeId(), successSpiked.getPhoneNumber());
+                boolean exist = isRepeatedSpike(jedis, spikeId, phoneNumber);
                 if (!exist) {
                     try {
                         // 开始监控 key
@@ -170,22 +163,17 @@ public class RedisDAO {
                             // 避免超卖
                             if (result >= 0) {
                                 // 存入防重集合
-                                putRecord(successSpiked.getSpikeId(), successSpiked.getPhoneNumber());
+                                putRecord(jedis, spikeId, phoneNumber);
                                 // 存入秒杀记录
-                                putSuccess(successSpiked);
+                                putSuccess(jedis, spikeId, phoneNumber);
                             } else {
                                 return SpikeStateEnum.END;
                             }
-                            long end = System.currentTimeMillis() - start;
-                            System.out.println("Time: " + end);
                             return SpikeStateEnum.SUCCESS;
                         } else {
                             // 返回需重新秒杀
-                            long end = System.currentTimeMillis() - start;
-                            System.out.println("Time: " + end);
                             return SpikeStateEnum.NEED_RESPIK;
                         }
-
                     } catch (Exception e) {
                         logger.error(e.getMessage(), e);
                     } finally {
@@ -194,12 +182,12 @@ public class RedisDAO {
 
                 } else {
                     // 返回重复秒杀
-                    long end = System.currentTimeMillis() - start;
-                    System.out.println("Time: " + end);
+                    jedis.close();
                     return SpikeStateEnum.REPEATED_SPIKE;
                 }
             } else {
                 // 库存为0，返回秒杀结束
+                jedis.close();
                 return SpikeStateEnum.END;
             }
         } catch (Exception e) {
@@ -216,53 +204,34 @@ public class RedisDAO {
      * @param phoneNumber
      * @return
      */
-    public Long putRecord(long spikeId, long phoneNumber){
+    public Long putRecord(Jedis jedis, long spikeId, long phoneNumber){
 
-        Jedis jedis = getJedis();
-        if (jedis != null){
-            String key = spikeId + "/" + phoneNumber;
-            Long result = jedis.sadd(SET, key);
+        String key = spikeId + "/" + phoneNumber;
+        Long result = jedis.sadd(SET, key);
 
-            jedis.close();
-            return result;
-        }
-        return null;
+        return result;
     }
-
 
     /**
      * 往 redis 列表中插入抢购成功记录
-     * @param successSpiked
+     * @param jedis
+     * @param spikeId
+     * @param phoneNumber
      * @return
      */
-    public Long putSuccess(SuccessSpiked successSpiked){
-
-        try {
-
-            Jedis jedis = jedisPool.getResource();
-            try{
-
-                String listKey = "list:" + successSpiked.getSpikeId();
-                // 序列化 successSpiked
-                byte[] bytes = ProtostuffIOUtil.toByteArray(successSpiked, schemaSucess,
-                        LinkedBuffer.allocate(LinkedBuffer.DEFAULT_BUFFER_SIZE));
-
-                // jedis 列表中插入秒杀成功记录
-                Long result = jedis.lpush(listKey.getBytes(), bytes);
-
-                // 返回插入结果
-                return result;
-
-            } catch (Exception e){
-                logger.error(e.getMessage(), e);
-            } finally {
-                jedis.close();
-            }
+    public Long putSuccess(Jedis jedis, long spikeId, long phoneNumber){
+        try{
+            String listKey = "list:" + spikeId;
+            // 序列化 successSpiked
+            byte[] bytes = (spikeId + "/" + phoneNumber + "/" + System.currentTimeMillis()).getBytes();
+            // jedis 列表中插入秒杀成功记录
+            Long result = jedis.lpush(listKey.getBytes(), bytes);
+            // 返回插入结果
+            return result;
 
         } catch (Exception e){
             logger.error(e.getMessage(), e);
         }
-
         return null;
     }
 
@@ -270,9 +239,9 @@ public class RedisDAO {
      * 取出某一商品的所有秒杀记录
      * @return
      */
-    public List<SuccessSpiked> getSuccess(long spikeId){
+    public List<String> getSuccess(long spikeId){
 
-        List<SuccessSpiked> list = new ArrayList<SuccessSpiked>();
+        List<String> list = new ArrayList<String>();
         try {
             Jedis jedis = jedisPool.getResource();
 
@@ -284,12 +253,8 @@ public class RedisDAO {
                 for (int i = 0; i < length; i++) {
                     // 弹出并获得秒杀记录字节序列
                     byte[] bytes = jedis.rpop(listKey.getBytes());
-                    // 新建空白秒杀
-                    SuccessSpiked successSpiked = schemaSucess.newMessage();
-                    // 注入信息
-                    ProtostuffIOUtil.mergeFrom(bytes, successSpiked, schemaSucess);
                     // 插入列表
-                    list.add(successSpiked);
+                    list.add(new String(bytes));
                 }
                 // 取出记录后删除列表和集合
                 jedis.del(listKey.getBytes());

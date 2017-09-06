@@ -200,27 +200,27 @@ public class SpikeServiceImpl implements SpikeService {
             // 获得当前时间
             long time = System.currentTimeMillis();
             // 超时 2秒，循环更新列表
-            while (System.currentTimeMillis() - time < 2000){
+            while (System.currentTimeMillis() - time < 200){
                 // 新建 successSpike 用于更新 redis
-                SuccessSpiked successSpiked = new SuccessSpiked();
-                successSpiked.setPhoneNumber(phoneNumber);
-                successSpiked.setSpikeId(spikeId);
-                successSpiked.setCreateTime(new Date());
                 // 获得返回值
-                SpikeStateEnum spikeStateEnum = redisDAO.updateSpike(successSpiked);
+                SpikeStateEnum spikeStateEnum = redisDAO.updateSpike(spikeId, phoneNumber);
                 // 如果不是需要重新秒杀，直接返回状态，否则继续循环
                 if (spikeStateEnum.getState() != -4) {
                     // 如果秒杀结束，将数据持久化到数据库
                     if (spikeStateEnum.getState() == 0) {
-                        List<SuccessSpiked> successSpikeds = redisDAO.getSuccess(spikeId);
+                        List<String> successSpikeds = redisDAO.getSuccess(spikeId);
                         // list 中存在值时，循环插入
                         if (successSpikeds != null && successSpikeds.size() > 0) {
-                            for (SuccessSpiked success : successSpikeds){
+                            for (String success : successSpikeds){
+                                String[] data = success.split("/");
+                                Long id = Long.parseLong(data[0]);
+                                Long phone = Long.parseLong(data[1]);
+                                Date date = new Date(Long.parseLong(data[2]));
+
                                 // 往数据库插入
-                                successSpikedDAO.insertSpikedRecordFromRedis(success.getSpikeId(),
-                                        success.getPhoneNumber(), success.getCreateTime());
+                                successSpikedDAO.insertSpikedRecordFromRedis(id, phone, date);
                                 // 更新库存为 0
-                                spikeDAO.reduceNumberToZero(success.getSpikeId(), success.getCreateTime());
+                                spikeDAO.reduceNumber(1, id, date);
                             }
                         }
                     }

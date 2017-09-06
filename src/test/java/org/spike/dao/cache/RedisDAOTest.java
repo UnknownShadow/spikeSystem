@@ -29,7 +29,7 @@ import static org.junit.Assert.*;
 @ContextConfiguration({"classpath:spring/spring-dao.xml"})
 public class RedisDAOTest {
 
-    private long id = 1005;
+    private long id = 1001;
     @Autowired
     private RedisDAO redisDAO;
 
@@ -56,34 +56,20 @@ public class RedisDAOTest {
     @Test
     public void updateTest(){
 
-        long id = 1005;
-        long phone = 13544678236L;
-        SuccessSpiked successSpiked = new SuccessSpiked();
-        successSpiked.setCreateTime(new Date());
-        successSpiked.setSpikeId(id);
-        successSpiked.setPhoneNumber(phone);
+        long phone = 17544688236L;
 
 //        long num = redisDAO.putSuccess(successSpiked);
 //        System.out.println("num: " + num);
-        SpikeStateEnum spikeStateEnum = redisDAO.updateSpike(successSpiked);
+        SpikeStateEnum spikeStateEnum = redisDAO.updateSpike(id, phone);
         System.out.println("Result: " + spikeStateEnum.getState() + ", " + spikeStateEnum.getStateInfo());
     }
 
     @Test
     public void countTest(){
-        long id = 1005;
         int count = redisDAO.getCount(id);
         System.out.println("库存数： " + count);
     }
 
-    @Test
-    public void getSuccessTest(){
-        List<SuccessSpiked> successSpikeds = redisDAO.getSuccess(1005);
-        System.out.println("Size: " + successSpikeds.size());
-        for (SuccessSpiked s : successSpikeds){
-            System.out.println(s.getSpikeId() + "/" + s.getPhoneNumber() + "/" + s.getCreateTime());
-        }
-    }
 
     @Test
     public void threadTest() throws Throwable {
@@ -95,12 +81,7 @@ public class RedisDAOTest {
             tr[i] = new TestRunnable() {
                 @Override
                 public void runTest() throws Throwable {
-                    SuccessSpiked successSpiked = new SuccessSpiked();
-                    successSpiked.setSpike(redisDAO.getSpike(1005));
-                    successSpiked.setSpikeId(1005);
-                    successSpiked.setPhoneNumber(12340000000L + new Random().nextInt(1000));
-                    successSpiked.setCreateTime(new Date());
-                    SpikeStateEnum spikeStateEnum = redisDAO.updateSpike(successSpiked);
+                    SpikeStateEnum spikeStateEnum = redisDAO.updateSpike(id, 12340000000L + new Random().nextInt(1000));
                     System.out.println("State: " + spikeStateEnum.getState() + "/" + spikeStateEnum.getStateInfo());
                 }
             };
